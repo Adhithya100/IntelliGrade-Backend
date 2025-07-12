@@ -1,4 +1,3 @@
-from email.mime import base
 import os
 from dotenv import load_dotenv
 from supabase import Client, create_client

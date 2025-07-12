@@ -1,11 +1,28 @@
-from fastapi import FastAPI, Depends, Response
+from fastapi import FastAPI, Depends, Response, Request, HTTPException
 from models import User
+import os
+from dotenv import load_dotenv
 from db.database import create_supabase_client
-from auth import get_current_user
+
+load_dotenv()
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_KEY")
 
 app = FastAPI()
-
 supabase = create_supabase_client()
+
+def get_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated (no cookie)")
+
+    try:
+        payload = supabase.auth.get_user(token)
+        return payload
+    
+    except Exception as e:
+        print(f"JWT Error: {e}")
+        raise HTTPException(status_code=401, detail=f"Token error: {str(e)}")
 
 @app.get("/")
 async def root():
@@ -38,6 +55,16 @@ async def signin(user: User, res: Response):
 
     except Exception as e:
         return {"message": f"An error occurred: {str(e)}"}
+    
+@app.get("/signout")
+async def signout(res: Response, user: dict = Depends(get_current_user)):
+    try:
+        response = supabase.auth.sign_out()
+        res.delete_cookie(key="access_token")
+        return {"message": "signed out", "user": response}
+
+    except Exception as e:
+        return {"message": f"An error occured: {str(e)}"}
     
 @app.get("/protected")
 async def protected_route(user: dict = Depends(get_current_user)):
