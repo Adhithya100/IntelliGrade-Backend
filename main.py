@@ -1,18 +1,25 @@
-from fastapi import FastAPI, Depends, Response, Request, HTTPException
-from models import User
-import os
-from dotenv import load_dotenv
+# Import necessary libraries
+from fastapi import FastAPI, Depends, Response, Request, HTTPException, File, UploadFile
 from db.database import create_supabase_client
+from google import genai
+from models import User, Exam, AnswerKey
+from pdf2image import convert_from_bytes
+from dotenv import load_dotenv
+import os
 
+# Load environment variables
 load_dotenv()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_KEY")
+GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")
 
+# Initialize clients
 app = FastAPI()
 supabase = create_supabase_client()
+gemini = genai.Client(api_key=GEMINI_API_KEY)
 
+# Function to get the current authenticated user
 def get_current_user(request: Request):
     token = request.cookies.get("access_token")
-    
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated (no cookie)")
 
@@ -24,6 +31,22 @@ def get_current_user(request: Request):
         print(f"JWT Error: {e}")
         raise HTTPException(status_code=401, detail=f"Token error: {str(e)}")
 
+# Function to upload answer key to the database
+def upload_answer_key_to_db(images, exam_id):
+    response = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[images, "Generate a json in the given format using the images. I want the text as it is from the images, do not add/replace/remove content."],
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": list[AnswerKey],
+        },
+    )
+    
+    for i in response.to_json_dict()['parsed']:
+        i['exam_id'] = exam_id
+        supabase.from_("answer_keys").insert(i).execute()
+
+#API Endpoints
 @app.get("/")
 async def root():
     return {"message":"testing"}
@@ -44,7 +67,6 @@ async def signin(user: User, res: Response):
         response = supabase.auth.sign_in_with_password({"email": user.mail_id, "password": user.password})
         
         access_token = response.session.access_token
-        
         res.set_cookie(
             key="access_token",
             value=access_token,
@@ -61,12 +83,54 @@ async def signout(res: Response, user: dict = Depends(get_current_user)):
     try:
         response = supabase.auth.sign_out()
         res.delete_cookie(key="access_token")
+        
         return {"message": "signed out", "user": response}
 
     except Exception as e:
         return {"message": f"An error occured: {str(e)}"}
     
-@app.get("/protected")
+@app.get("/protected") # Example of a protected route
 async def protected_route(user: dict = Depends(get_current_user)):
     return {"message": "This is a protected route", "user": user}
 
+@app.post("/add_exam")
+async def add_exam(exam: Exam, res: Response, user: dict = Depends(get_current_user)):
+    try:
+        data = {
+            "user_id": user.user.id,
+            "exam_name": exam.exam_name,
+            "subject": exam.subject,
+            "max_marks": exam.max_marks,
+            "exam_date": exam.exam_date,
+        }
+        
+        response = supabase.from_("exams").insert(data).execute()
+        
+        exam_id = response.data[0]['exam_id']
+        res.set_cookie(
+            key="exam_id",
+            value=exam_id,
+            httponly=True
+        )
+        
+        return {"message": "Exam added successfully", "exam": response.data}
+    
+    except Exception as e:
+        return {"message": f"An error occurred: {str(e)}"}
+    
+@app.post("/upload_answer_key")
+async def upload_answer_key(res: Response, req: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    try:
+        exam_id = req.cookies.get("exam_id")
+        res.delete_cookie(key="exam_id")
+        
+        contents = await file.read()
+        images = convert_from_bytes(contents)
+        
+        upload_answer_key_to_db(images, exam_id)
+            
+        return {"message": "Answer key uploaded successfully", "exam_id": exam_id}
+    
+    except Exception as e:
+        return {"message": f"An error occurred: {str(e)}"}
+    
