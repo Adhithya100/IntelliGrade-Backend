@@ -1,5 +1,4 @@
 from pydantic import BaseModel, EmailStr
-from streamlit import status
 
 class User(BaseModel):
     mail_id: EmailStr
