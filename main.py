@@ -134,3 +134,12 @@ async def upload_answer_key(res: Response, req: Request, file: UploadFile = File
     except Exception as e:
         return {"message": f"An error occurred: {str(e)}"}
     
+@app.get("/get_user")
+async def get_user(user: dict = Depends(get_current_user)):
+    return {"user": user}
+
+@app.get("/get_exams")
+async def get_exams(user: dict = Depends(get_current_user)):
+    response = supabase.table("exams").select("*").eq("user_id", user.user.id).execute()
+    return {"exams": response.data}
+
