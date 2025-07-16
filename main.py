@@ -1,5 +1,6 @@
 # Import necessary libraries
 from fastapi import FastAPI, Depends, Response, Request, HTTPException, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from db.database import create_supabase_client
 from google import genai
 from models import User, Exam, AnswerKey
@@ -16,6 +17,15 @@ GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")
 app = FastAPI()
 supabase = create_supabase_client()
 gemini = genai.Client(api_key=GEMINI_API_KEY)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # Function to get the current authenticated user
 def get_current_user(request: Request):
