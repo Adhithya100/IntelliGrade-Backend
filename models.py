@@ -15,3 +15,9 @@ class AnswerKey(BaseModel):
     question: str
     ideal_ans: str
     max_mark_per_q: int
+    
+class StudentDetail(BaseModel):
+    roll_no: int
+    name: str
+    class_: int
+    section: str

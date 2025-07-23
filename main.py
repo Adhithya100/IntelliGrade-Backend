@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from db.database import create_supabase_client
 from typing import List
 from google import genai
-from models import User, Exam, AnswerKey
+from models import User, Exam, AnswerKey, StudentDetail
 from pdf2image import convert_from_bytes
 from dotenv import load_dotenv
+import json
 import os
 
 # Load environment variables
@@ -55,6 +56,19 @@ def upload_answer_key_to_db(images, exam_id):
     for i in response.to_json_dict()['parsed']:
         i['exam_id'] = exam_id
         supabase.from_("answer_keys").insert(i).execute()
+
+def process_student_submission(images, exam_id, user_id):
+    response = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[images, "Generate a json in the given format using the images. Take only the needed information from the images like name, roll no, class and section."],
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": StudentDetail,
+        },
+    )
+    data=json.loads(response.text)
+    data['user_id']=user_id
+    supabase.from_("students").insert(data).execute()
 
 #API Endpoints
 @app.get("/")
@@ -155,4 +169,16 @@ async def get_exams(user: dict = Depends(get_current_user)):
 
 @app.post("/upload_answer_scripts")
 async def upload_answer_scripts(res: Response, req: Request, files: List[UploadFile] = File(...), user: dict = Depends(get_current_user), exam_id: str = None):
-    return {"message": "This endpoint is not implemented yet."}
+    processed_students = []
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded.")
+    for file in files:
+        try:
+            contents = await file.read()
+            images=convert_from_bytes(contents)
+            student_info = process_student_submission(images, exam_id, user.user.id)
+            processed_students.append(student_info)
+
+        except Exception as e:
+            # Log the error but continue processing other files
+            print(f"Failed to process file {file.filename}: {str(e)}")
