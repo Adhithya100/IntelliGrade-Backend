@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Depends, Response, Request, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from db.database import create_supabase_client
+from typing import List
 from google import genai
 from models import User, Exam, AnswerKey
 from pdf2image import convert_from_bytes
@@ -25,7 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # Function to get the current authenticated user
 def get_current_user(request: Request):
@@ -153,3 +153,6 @@ async def get_exams(user: dict = Depends(get_current_user)):
     response = supabase.table("exams").select("*").eq("user_id", user.user.id).execute()
     return {"exams": response.data}
 
+@app.post("/upload_answer_scripts")
+async def upload_answer_scripts(res: Response, req: Request, files: List[UploadFile] = File(...), user: dict = Depends(get_current_user), exam_id: str = None):
+    return {"message": "This endpoint is not implemented yet."}
